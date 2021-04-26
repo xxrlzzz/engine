@@ -2,8 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @dart = 2.12
-part of engine;
+import 'dart:html' as html;
+import 'dart:js' as js;
+import 'dart:js_util' as js_util;
+import 'dart:math' as math;
+
+import 'package:meta/meta.dart';
+import 'package:ui/src/engine.dart';
+import 'package:ui/ui.dart' as ui;
+
+import 'pointer_converter.dart';
 
 /// Set this flag to true to see all the fired events in the console.
 const bool _debugLogPointerEvents = false;
@@ -510,7 +518,7 @@ class _PointerAdapter extends _BaseAdapter with _WheelEventListenerMixin {
   @override
   void setup() {
     _addPointerEventListener('pointerdown', (html.PointerEvent event) {
-      final int device = event.pointerId!;
+      final int device = _getPointerId(event);
       final List<ui.PointerData> pointerData = <ui.PointerData>[];
       final _ButtonSanitizer sanitizer = _ensureSanitizer(device);
       final _SanitizedDetails? up =
@@ -528,7 +536,7 @@ class _PointerAdapter extends _BaseAdapter with _WheelEventListenerMixin {
     });
 
     _addPointerEventListener('pointermove', (html.PointerEvent event) {
-      final int device = event.pointerId!;
+      final int device = _getPointerId(event);
       final _ButtonSanitizer sanitizer = _ensureSanitizer(device);
       final List<ui.PointerData> pointerData = <ui.PointerData>[];
       final List<html.PointerEvent> expandedEvents = _expandEvents(event);
@@ -544,7 +552,7 @@ class _PointerAdapter extends _BaseAdapter with _WheelEventListenerMixin {
     }, acceptOutsideGlasspane: true);
 
     _addPointerEventListener('pointerup', (html.PointerEvent event) {
-      final int device = event.pointerId!;
+      final int device = _getPointerId(event);
       final List<ui.PointerData> pointerData = <ui.PointerData>[];
       final _SanitizedDetails? details = _getSanitizer(device).sanitizeUpEvent(buttons: event.buttons);
       _removePointerIfUnhoverable(event);
@@ -557,7 +565,7 @@ class _PointerAdapter extends _BaseAdapter with _WheelEventListenerMixin {
     // A browser fires cancel event if it concludes the pointer will no longer
     // be able to generate events (example: device is deactivated)
     _addPointerEventListener('pointercancel', (html.PointerEvent event) {
-      final int device = event.pointerId!;
+      final int device = _getPointerId(event);
       final List<ui.PointerData> pointerData = <ui.PointerData>[];
       final _SanitizedDetails details = _getSanitizer(device).sanitizeCancelEvent();
       _removePointerIfUnhoverable(event);
@@ -581,10 +589,6 @@ class _PointerAdapter extends _BaseAdapter with _WheelEventListenerMixin {
     assert(event != null); // ignore: unnecessary_null_comparison
     assert(details != null); // ignore: unnecessary_null_comparison
     final ui.PointerDeviceKind kind = _pointerTypeToDeviceKind(event.pointerType!);
-    // We force `device: _mouseDeviceId` on mouse pointers because Wheel events
-    // might come before any PointerEvents, and since wheel events don't contain
-    // pointerId we always assign `device: _mouseDeviceId` to them.
-    final int device = kind == ui.PointerDeviceKind.mouse ? _mouseDeviceId : event.pointerId!;
     final double tilt = _computeHighestTilt(event);
     final Duration timeStamp = _BaseAdapter._eventTimeStampToDuration(event.timeStamp!);
     _pointerDataConverter.convert(
@@ -593,7 +597,7 @@ class _PointerAdapter extends _BaseAdapter with _WheelEventListenerMixin {
       timeStamp: timeStamp,
       kind: kind,
       signalKind: ui.PointerSignalKind.none,
-      device: device,
+      device: _getPointerId(event),
       physicalX: event.client.x.toDouble() * ui.window.devicePixelRatio,
       physicalY: event.client.y.toDouble() * ui.window.devicePixelRatio,
       buttons: details.buttons,
@@ -630,6 +634,14 @@ class _PointerAdapter extends _BaseAdapter with _WheelEventListenerMixin {
       default:
         return ui.PointerDeviceKind.unknown;
     }
+  }
+
+  int _getPointerId(html.PointerEvent event) {
+    // We force `device: _mouseDeviceId` on mouse pointers because Wheel events
+    // might come before any PointerEvents, and since wheel events don't contain
+    // pointerId we always assign `device: _mouseDeviceId` to them.
+    final ui.PointerDeviceKind kind = _pointerTypeToDeviceKind(event.pointerType!);
+    return kind == ui.PointerDeviceKind.mouse ? _mouseDeviceId : event.pointerId!;
   }
 
   /// Tilt angle is -90 to + 90. Take maximum deflection and convert to radians.

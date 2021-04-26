@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @dart = 2.12
 part of ui;
 
 enum FontStyle {
@@ -204,19 +203,20 @@ enum TextDecorationStyle {
   wavy
 }
 
+enum TextLeadingDistribution {
+  proportional,
+  even,
+}
+
 class TextHeightBehavior {
   const TextHeightBehavior({
     this.applyHeightToFirstAscent = true,
     this.applyHeightToLastDescent = true,
+    this.leadingDistribution = TextLeadingDistribution.proportional,
   });
-  const TextHeightBehavior.fromEncoded(int encoded)
-      : applyHeightToFirstAscent = (encoded & 0x1) == 0,
-        applyHeightToLastDescent = (encoded & 0x2) == 0;
   final bool applyHeightToFirstAscent;
   final bool applyHeightToLastDescent;
-  int encode() {
-    return (applyHeightToFirstAscent ? 0 : 1 << 0) | (applyHeightToLastDescent ? 0 : 1 << 1);
-  }
+  final TextLeadingDistribution leadingDistribution;
 
   @override
   bool operator ==(Object other) {
@@ -224,7 +224,8 @@ class TextHeightBehavior {
      return false;
     return other is TextHeightBehavior
         && other.applyHeightToFirstAscent == applyHeightToFirstAscent
-        && other.applyHeightToLastDescent == applyHeightToLastDescent;
+        && other.applyHeightToLastDescent == applyHeightToLastDescent
+        && other.leadingDistribution == leadingDistribution;
   }
 
   @override
@@ -239,7 +240,8 @@ class TextHeightBehavior {
   String toString() {
     return 'TextHeightBehavior('
              'applyHeightToFirstAscent: $applyHeightToFirstAscent, '
-             'applyHeightToLastDescent: $applyHeightToLastDescent'
+             'applyHeightToLastDescent: $applyHeightToLastDescent, '
+             'leadingDistribution: $leadingDistribution'
            ')';
   }
 }
@@ -260,6 +262,7 @@ abstract class TextStyle {
     double? letterSpacing,
     double? wordSpacing,
     double? height,
+    TextLeadingDistribution? leadingDistribution,
     Locale? locale,
     Paint? background,
     Paint? foreground,
@@ -370,6 +373,7 @@ abstract class StrutStyle {
     List<String>? fontFamilyFallback,
     double? fontSize,
     double? height,
+    TextLeadingDistribution? leadingDistribution,
     double? leading,
     FontWeight? fontWeight,
     FontStyle? fontStyle,

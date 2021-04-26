@@ -49,8 +49,20 @@ enum class DartErrorCode {
   ApiError = 253,
   /// The Dart error code for a compilation error.
   CompilationError = 254,
-  /// The Dart error code for an unkonwn error.
+  /// The Dart error code for an unknown error.
   UnknownError = 255
+};
+
+/// Values for |Shell::SetGpuAvailability|.
+enum class GpuAvailability {
+  /// Indicates that GPU operations should be permitted.
+  kAvailable = 0,
+  /// Indicates that the GPU is about to become unavailable, and to attempt to
+  /// flush any GPU related resources now.
+  kFlushAndMakeUnavailable = 1,
+  /// Indicates that the GPU is unavailable, and that no attempt should be made
+  /// to even flush GPU objects until it is available again.
+  kUnavailable = 2
 };
 
 //------------------------------------------------------------------------------
@@ -134,6 +146,8 @@ class Shell final : public PlatformView::Delegate,
   ///                                      valid rasterizer. This will be called
   ///                                      on the render task runner before this
   ///                                      method returns.
+  /// @param[in]  is_gpu_disabled          The default value for the switch that
+  ///                                      turns off the GPU.
   ///
   /// @return     A full initialized shell if the settings and callbacks are
   ///             valid. The root isolate has been created but not yet launched.
@@ -148,7 +162,8 @@ class Shell final : public PlatformView::Delegate,
       TaskRunners task_runners,
       Settings settings,
       const CreateCallback<PlatformView>& on_create_platform_view,
-      const CreateCallback<Rasterizer>& on_create_rasterizer);
+      const CreateCallback<Rasterizer>& on_create_rasterizer,
+      bool is_gpu_disabled = false);
 
   //----------------------------------------------------------------------------
   /// @brief      Destroys the shell. This is a synchronous operation and
@@ -260,10 +275,10 @@ class Shell final : public PlatformView::Delegate,
   /// @brief      Used by embedders to check if all shell subcomponents are
   ///             initialized. It is the embedder's responsibility to make this
   ///             call before accessing any other shell method. A shell that is
-  ///             not setup must be discarded and another one created with
+  ///             not set up must be discarded and another one created with
   ///             updated settings.
   ///
-  /// @return     Returns if the shell has been setup. Once set up, this does
+  /// @return     Returns if the shell has been set up. Once set up, this does
   ///             not change for the life-cycle of the shell.
   ///
   bool IsSetup() const;
@@ -321,8 +336,13 @@ class Shell final : public PlatformView::Delegate,
   bool EngineHasLivePorts() const;
 
   //----------------------------------------------------------------------------
-  /// @brief     Accessor for the disable GPU SyncSwitch
-  std::shared_ptr<fml::SyncSwitch> GetIsGpuDisabledSyncSwitch() const override;
+  /// @brief     Accessor for the disable GPU SyncSwitch.
+  std::shared_ptr<const fml::SyncSwitch> GetIsGpuDisabledSyncSwitch()
+      const override;
+
+  //----------------------------------------------------------------------------
+  /// @brief     Marks the GPU as available or unavailable.
+  void SetGpuAvailability(GpuAvailability availability);
 
   //----------------------------------------------------------------------------
   /// @brief      Get a pointer to the Dart VM used by this running shell
@@ -413,7 +433,8 @@ class Shell final : public PlatformView::Delegate,
   Shell(DartVMRef vm,
         TaskRunners task_runners,
         Settings settings,
-        std::shared_ptr<VolatilePathTracker> volatile_path_tracker);
+        std::shared_ptr<VolatilePathTracker> volatile_path_tracker,
+        bool is_gpu_disabled);
 
   static std::unique_ptr<Shell> CreateShellOnPlatformThread(
       DartVMRef vm,
@@ -423,7 +444,8 @@ class Shell final : public PlatformView::Delegate,
       fml::RefPtr<const DartSnapshot> isolate_snapshot,
       const Shell::CreateCallback<PlatformView>& on_create_platform_view,
       const Shell::CreateCallback<Rasterizer>& on_create_rasterizer,
-      const EngineCreateCallback& on_create_engine);
+      const EngineCreateCallback& on_create_engine,
+      bool is_gpu_disabled);
   static std::unique_ptr<Shell> CreateWithSnapshot(
       const PlatformData& platform_data,
       TaskRunners task_runners,
@@ -432,7 +454,8 @@ class Shell final : public PlatformView::Delegate,
       fml::RefPtr<const DartSnapshot> isolate_snapshot,
       const CreateCallback<PlatformView>& on_create_platform_view,
       const CreateCallback<Rasterizer>& on_create_rasterizer,
-      const EngineCreateCallback& on_create_engine);
+      const EngineCreateCallback& on_create_engine,
+      bool is_gpu_disabled);
 
   bool Setup(std::unique_ptr<PlatformView> platform_view,
              std::unique_ptr<Engine> engine,

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @dart = 2.12
 part of engine;
 
 /// Enable this to print every command applied by a canvas.
@@ -120,13 +119,25 @@ class RecordingCanvas {
     _recordingEnded = true;
   }
 
-  /// Applies the recorded commands onto an [engineCanvas].
+  /// Applies the recorded commands onto an [engineCanvas] and signals to
+  /// canvas that all painting is completed for garbage collection/reuse.
   ///
   /// The [clipRect] specifies the clip applied to the picture (screen clip at
   /// a minimum). The commands that fall outside the clip are skipped and are
   /// not applied to the [engineCanvas]. A command must have a non-zero
   /// intersection with the clip in order to be applied.
   void apply(EngineCanvas engineCanvas, ui.Rect clipRect) {
+    applyCommands(engineCanvas, clipRect);
+    engineCanvas.endOfPaint();
+  }
+
+  /// Applies the recorded commands onto an [engineCanvas].
+  ///
+  /// The [clipRect] specifies the clip applied to the picture (screen clip at
+  /// a minimum). The commands that fall outside the clip are skipped and are
+  /// not applied to the [engineCanvas]. A command must have a non-zero
+  /// intersection with the clip in order to be applied.
+  void applyCommands(EngineCanvas engineCanvas, ui.Rect clipRect) {
     assert(_recordingEnded);
     if (_debugDumpPaintCommands) {
       final StringBuffer debugBuf = StringBuffer();
@@ -183,7 +194,6 @@ class RecordingCanvas {
         }
       }
     }
-    engineCanvas.endOfPaint();
   }
 
   /// Prints recorded commands.
@@ -311,6 +321,7 @@ class RecordingCanvas {
 
   void drawLine(ui.Offset p1, ui.Offset p2, SurfacePaint paint) {
     assert(!_recordingEnded);
+    assert(paint.shader == null || paint.shader is! ImageShader, 'ImageShader not supported yet');
     final double paintSpread = math.max(_getPaintSpread(paint), 1.0);
     final PaintDrawLine command = PaintDrawLine(p1, p2, paint.paintData);
     // TODO(yjbanov): This can be optimized. Currently we create a box around
@@ -334,6 +345,7 @@ class RecordingCanvas {
 
   void drawPaint(SurfacePaint paint) {
     assert(!_recordingEnded);
+    assert(paint.shader == null || paint.shader is! ImageShader, 'ImageShader not supported yet');
     renderStrategy.hasArbitraryPaint = true;
     _didDraw = true;
     final PaintDrawPaint command = PaintDrawPaint(paint.paintData);
@@ -343,6 +355,7 @@ class RecordingCanvas {
 
   void drawRect(ui.Rect rect, SurfacePaint paint) {
     assert(!_recordingEnded);
+    assert(paint.shader == null || paint.shader is! ImageShader, 'ImageShader not supported yet');
     if (paint.shader != null) {
       renderStrategy.hasArbitraryPaint = true;
     }
@@ -359,6 +372,7 @@ class RecordingCanvas {
 
   void drawRRect(ui.RRect rrect, SurfacePaint paint) {
     assert(!_recordingEnded);
+    assert(paint.shader == null || paint.shader is! ImageShader, 'ImageShader not supported yet');
     if (paint.shader != null || !rrect.webOnlyUniformRadii) {
       renderStrategy.hasArbitraryPaint = true;
     }
@@ -375,6 +389,7 @@ class RecordingCanvas {
 
   void drawDRRect(ui.RRect outer, ui.RRect inner, SurfacePaint paint) {
     assert(!_recordingEnded);
+    assert(paint.shader == null || paint.shader is! ImageShader, 'ImageShader not supported yet');
     // Check the inner bounds are contained within the outer bounds
     // see: https://cs.chromium.org/chromium/src/third_party/skia/src/core/SkCanvas.cpp?l=1787-1789
     ui.Rect innerRect = inner.outerRect;
@@ -433,6 +448,7 @@ class RecordingCanvas {
 
   void drawOval(ui.Rect rect, SurfacePaint paint) {
     assert(!_recordingEnded);
+    assert(paint.shader == null || paint.shader is! ImageShader, 'ImageShader not supported yet');
     renderStrategy.hasArbitraryPaint = true;
     _didDraw = true;
     final double paintSpread = _getPaintSpread(paint);
@@ -447,6 +463,7 @@ class RecordingCanvas {
 
   void drawCircle(ui.Offset c, double radius, SurfacePaint paint) {
     assert(!_recordingEnded);
+    assert(paint.shader == null || paint.shader is! ImageShader, 'ImageShader not supported yet');
     renderStrategy.hasArbitraryPaint = true;
     _didDraw = true;
     final double paintSpread = _getPaintSpread(paint);
@@ -464,6 +481,7 @@ class RecordingCanvas {
 
   void drawPath(ui.Path path, SurfacePaint paint) {
     assert(!_recordingEnded);
+    assert(paint.shader == null || paint.shader is! ImageShader, 'ImageShader not supported yet');
     if (paint.shader == null) {
       // For Rect/RoundedRect paths use drawRect/drawRRect code paths for
       // DomCanvas optimization.
@@ -500,6 +518,7 @@ class RecordingCanvas {
 
   void drawImage(ui.Image image, ui.Offset offset, SurfacePaint paint) {
     assert(!_recordingEnded);
+    assert(paint.shader == null || paint.shader is! ImageShader, 'ImageShader not supported yet');
     renderStrategy.hasArbitraryPaint = true;
     renderStrategy.hasImageElements = true;
     _didDraw = true;
@@ -511,9 +530,33 @@ class RecordingCanvas {
     _commands.add(command);
   }
 
+  void drawPicture(ui.Picture picture) {
+    assert(!_recordingEnded);
+    final EnginePicture enginePicture = picture as EnginePicture;
+    // TODO apply renderStrategy of picture recording to this recording.
+    if (enginePicture.recordingCanvas == null) {
+      // No contents / nothing to draw.
+      return;
+    }
+    final RecordingCanvas pictureRecording = enginePicture.recordingCanvas!;
+    if (pictureRecording._didDraw == true) {
+      _didDraw = true;
+    }
+    renderStrategy.merge(pictureRecording.renderStrategy);
+    // Need to save to make sure we don't pick up leftover clips and
+    // transforms from running commands in picture.
+    save();
+    _commands.addAll(pictureRecording._commands);
+    restore();
+    if (pictureRecording._pictureBounds != null) {
+      _paintBounds.growBounds(pictureRecording._pictureBounds!);
+    }
+  }
+
   void drawImageRect(
       ui.Image image, ui.Rect src, ui.Rect dst, SurfacePaint paint) {
     assert(!_recordingEnded);
+    assert(paint.shader == null || paint.shader is! ImageShader, 'ImageShader not supported yet');
     renderStrategy.hasArbitraryPaint = true;
     renderStrategy.hasImageElements = true;
     _didDraw = true;
@@ -1746,7 +1789,8 @@ class _PaintBounds {
     growLTRB(r.left, r.top, r.right, r.bottom, command);
   }
 
-  /// Grow painted area to include given rectangle.
+  /// Grow painted area to include given rectangle and precompute
+  /// clipped out state for command.
   void growLTRB(double left, double top, double right, double bottom,
       DrawCommand command) {
     if (left == right || top == bottom) {
@@ -1807,6 +1851,52 @@ class _PaintBounds {
     command.topBound = transformedPointTop;
     command.rightBound = transformedPointRight;
     command.bottomBound = transformedPointBottom;
+
+    if (_didPaintInsideClipArea) {
+      _left = math.min(
+          math.min(_left, transformedPointLeft), transformedPointRight);
+      _right = math.max(
+          math.max(_right, transformedPointLeft), transformedPointRight);
+      _top =
+          math.min(math.min(_top, transformedPointTop), transformedPointBottom);
+      _bottom = math.max(
+          math.max(_bottom, transformedPointTop), transformedPointBottom);
+    } else {
+      _left = math.min(transformedPointLeft, transformedPointRight);
+      _right = math.max(transformedPointLeft, transformedPointRight);
+      _top = math.min(transformedPointTop, transformedPointBottom);
+      _bottom = math.max(transformedPointTop, transformedPointBottom);
+    }
+    _didPaintInsideClipArea = true;
+  }
+
+  /// Grow painted area to include given rectangle.
+  void growBounds(ui.Rect bounds) {
+    final double left = bounds.left;
+    final double top = bounds.top;
+    final double right = bounds.right;
+    final double bottom = bounds.bottom;
+    if (left == right || top == bottom) {
+      return;
+    }
+
+    double transformedPointLeft = left;
+    double transformedPointTop = top;
+    double transformedPointRight = right;
+    double transformedPointBottom = bottom;
+
+    if (!_currentMatrixIsIdentity) {
+      _tempRectData[0] = left;
+      _tempRectData[1] = top;
+      _tempRectData[2] = right;
+      _tempRectData[3] = bottom;
+
+      transformLTRB(_currentMatrix, _tempRectData);
+      transformedPointLeft = _tempRectData[0];
+      transformedPointTop = _tempRectData[1];
+      transformedPointRight = _tempRectData[2];
+      transformedPointBottom = _tempRectData[3];
+    }
 
     if (_didPaintInsideClipArea) {
       _left = math.min(
@@ -1942,4 +2032,11 @@ class RenderStrategy {
   bool isInsideShaderMask = false;
 
   RenderStrategy();
+
+  /// Merges render strategy settings from a child recording.
+  void merge(RenderStrategy childStrategy) {
+    hasImageElements |= childStrategy.hasImageElements;
+    hasParagraphs |= childStrategy.hasParagraphs;
+    hasArbitraryPaint |= childStrategy.hasArbitraryPaint;
+  }
 }
